@@ -64,8 +64,8 @@ func main() {
 			case watch.Added:
 				pod := event.Object.(*v1.Pod)
 				go func(name string) {
+					time.Sleep(time.Second * 5) // Wait for the pod to be ready
 					logToDebug("New pod added: " + event.Object.(*v1.Pod).Name)
-					pod := event.Object.(*v1.Pod)
 					dir := filepath.Join(pkg.ConfigData.LogsPath, namespace)
 					if err := os.MkdirAll(dir, 0755); err != nil {
 						logToDebug(err.Error())
@@ -78,19 +78,24 @@ func main() {
 					}
 					defer file.Close() // Remember to close the file
 					podNameToLogPath[pod.Name] = path
-					opts := &v1.PodLogOptions{
-						Follow: true,
+					for {
+						opts := &v1.PodLogOptions{
+							Follow: true,
+						}
+						req := cs.CoreV1().Pods(namespace).GetLogs(name, opts)
+						stream, err := req.Stream(ctx)
+						if err != nil {
+							logToDebug(err.Error())
+							return
+						}
+						defer stream.Close()
+						if _, err := io.Copy(file, stream); err != nil {
+							logToDebug(err.Error())
+						}
+						logToDebug("Stream closed for pod: " + name)
+						break
 					}
-					req := cs.CoreV1().Pods(namespace).GetLogs(name, opts)
-					stream, err := req.Stream(ctx)
-					if err != nil {
-						logToDebug(err.Error())
-						return
-					}
-					defer stream.Close()
-					if _, err := io.Copy(file, stream); err != nil {
-						logToDebug(err.Error())
-					}
+
 				}(pod.Name)
 			}
 		}
