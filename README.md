@@ -1,5 +1,5 @@
 # K8sdebug
-
+![logo](./logo.png)
 ## Scope
 
 This tool is created to solve my personal pain points while debugging an application inside K8s environment. This tool is not written from the perspective of a devops engineer but rather from the perspective of a backend application engineer trying to debug issues with the application in k8s environment. This tool is not created to be used directly with production environments. It expects certain privileges that might not be available in production. The audience for this is specifically developers running dev clusters or local clusters while debugging an application related issue. Any future feature that may be added will respect the above fact and not go beyond that scope. There might be mature tools available already that might have some intersection with the features provided here but most of those tools are devops centric. This tool is primarily application centric.
