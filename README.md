@@ -77,3 +77,7 @@ First time the k8sdebug command is called this file will be created.
 - [ ] In-cluster connectivity testing.
 - [ ] `kubebox`
 - [ ] Traffic recording and visualisation
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
