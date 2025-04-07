@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/pmezard/go-difflib/difflib"
@@ -27,13 +28,13 @@ func colorizeDiff(diff string) string {
 	for _, line := range lines {
 		switch {
 		case strings.HasPrefix(line, "-"):
-			b.WriteString("\033[31m") // Red
+			b.WriteString(ColorRed) // Red
 			b.WriteString(line)
-			b.WriteString("\033[0m\n")
+			b.WriteString(ColorReset + "\n")
 		case strings.HasPrefix(line, "+"):
-			b.WriteString("\033[32m") // Green
+			b.WriteString(ColorGreen) // Green
 			b.WriteString(line)
-			b.WriteString("\033[0m\n")
+			b.WriteString(ColorReset + "\n")
 		default:
 			b.WriteString(line)
 			b.WriteString("\n")
@@ -43,6 +44,7 @@ func colorizeDiff(diff string) string {
 }
 func newDiffCommand() *cobra.Command {
 	var tail int
+	var excludePatterns []string
 	cmd := &cobra.Command{
 		Use:   "diff",
 		Short: "Show diff of pods",
@@ -163,5 +165,20 @@ Total pods: `, len(podSlice))
 		},
 	}
 	cmd.Flags().IntVar(&tail, "tail", 10, "No. of lines to use for diff")
+
+	// In your command flags:
+	cmd.Flags().StringSliceVar(&excludePatterns, "exclude-patterns", nil, "Regex patterns to exclude from diff (e.g., timestamps)")
 	return cmd
+}
+
+func preprocessLines(lines []string, patterns []string) []string {
+	processed := make([]string, len(lines))
+	for i, line := range lines {
+		for _, pattern := range patterns {
+			re := regexp.MustCompile(pattern)
+			line = re.ReplaceAllString(line, "")
+		}
+		processed[i] = strings.TrimSpace(line)
+	}
+	return processed
 }

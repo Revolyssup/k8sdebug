@@ -97,5 +97,6 @@ func newShowCommand() *cobra.Command {
 			cmd.Println("Total correlated pods found for", name, "=", totalPods)
 		},
 	}
+
 	return cmd
 }
