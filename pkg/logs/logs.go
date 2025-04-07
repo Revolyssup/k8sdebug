@@ -18,5 +18,6 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(newRecordCommand())
 	cmd.AddCommand(newShowCommand())
 	cmd.AddCommand(newCleanupCommand())
+	cmd.AddCommand(newDiffCommand())
 	return cmd
 }

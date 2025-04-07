@@ -20,6 +20,7 @@ func newShowCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
+			totalPods := 0
 			switch typ {
 			case "pod":
 				path := filepath.Join(pkg.ConfigData.LogsPath, namespace, fmt.Sprintf("%s.log", name))
@@ -28,7 +29,8 @@ func newShowCommand() *cobra.Command {
 					cmd.Println("No logs found for pod:", name)
 					return
 				}
-				cmd.Println("Logs of pod:", string(logs))
+				cmd.Println("-------------------------------------------")
+				cmd.Println("Logs from pod ", name, ":", "\n", string(logs))
 
 			case "deployment":
 				path := filepath.Join(pkg.ConfigData.LogsPath, namespace, fmt.Sprintf("deployment.%s.metadata", name))
@@ -56,7 +58,9 @@ func newShowCommand() *cobra.Command {
 						cmd.Println("No logs found for pod:", name)
 						return
 					}
-					cmd.Println("Logs of pod:", string(logs))
+					cmd.Println("-------------------------------------------")
+					cmd.Println("Logs from pod ", podName, ":", "\n", string(logs))
+					totalPods++
 				}
 
 			case "replicaset":
@@ -85,9 +89,12 @@ func newShowCommand() *cobra.Command {
 						cmd.Println("No logs found for pod:", name)
 						return
 					}
-					cmd.Println("Logs of pod:", string(logs))
+					cmd.Println("-------------------------------------------")
+					cmd.Println("Logs from pod ", podName, ":", "\n", string(logs))
+					totalPods++
 				}
 			}
+			cmd.Println("Total correlated pods found for", name, "=", totalPods)
 		},
 	}
 	return cmd
