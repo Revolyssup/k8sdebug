@@ -13,6 +13,10 @@ func NewCommand() *cobra.Command {
 			cmd.Println("Logs will be recorded in", pkg.ConfigData.LogsPath)
 		},
 	}
+	cmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "default", "Name of the pod")
+	cmd.PersistentFlags().StringVarP(&typ, "type", "t", "pod", "Name of the pod")
 	cmd.AddCommand(newRecordCommand())
+	cmd.AddCommand(newShowCommand())
+	cmd.AddCommand(newCleanupCommand())
 	return cmd
 }

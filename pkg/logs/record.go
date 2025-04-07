@@ -33,7 +33,6 @@ func newRecordCommand() *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "default", "Name of the pod")
 	return cmd
 }
 
@@ -67,6 +66,7 @@ func startLogger() {
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, fmt.Sprintf("NAMESPACE=%s", namespace))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("LOGS_PATH=%s", pkg.ConfigData.LogsPath))
+	cmd.Env = append(cmd.Env, fmt.Sprintf("TYPE=%s", typ))
 	if err := cmd.Start(); err != nil {
 		fmt.Println("Error starting logger:", err)
 		return

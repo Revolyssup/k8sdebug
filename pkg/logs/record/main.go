@@ -18,6 +18,7 @@ import (
 )
 
 var namespace = os.Getenv("NAMESPACE")
+var typ = os.Getenv("TYPE")
 var file *os.File
 
 func logToDebug(msg string) {
@@ -63,7 +64,7 @@ func main() {
 			switch event.Type {
 			case watch.Added:
 				pod := event.Object.(*v1.Pod)
-				go func(name string) {
+				go func(podName, podNs string) {
 					time.Sleep(time.Second * 5) // Wait for the pod to be ready
 					logToDebug("New pod added: " + event.Object.(*v1.Pod).Name)
 					dir := filepath.Join(pkg.ConfigData.LogsPath, namespace)
@@ -71,18 +72,69 @@ func main() {
 						logToDebug(err.Error())
 						return
 					}
-					path := filepath.Join(dir, pod.Name+".log")
-					file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+					path := filepath.Join(dir, podName+".log")
+					file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 					if err != nil {
 						logToDebug(err.Error())
 					}
 					defer file.Close() // Remember to close the file
-					podNameToLogPath[pod.Name] = path
+					podNameToLogPath[podName] = path
+					logToDebug("TYPE IS " + typ)
+					// Check whether pod's parent matched the deployment
+					owner := pod.GetOwnerReferences()
+					// It's a standalone pod
+					if len(owner) == 0 {
+						logToDebug("No owner references found for pod: " + podName)
+					} else {
+						ref := owner[0]
+						if ref.Kind == "ReplicaSet" {
+							rsName := ref.Name
+							ns := podNs
+
+							rs, err := cs.AppsV1().ReplicaSets(ns).Get(ctx, rsName, metav1.GetOptions{})
+							if err != nil {
+								logToDebug(fmt.Sprintf("Error fetching ReplicaSet %s: %v", rsName, err))
+							}
+							//Its a standalone replicaset
+							if len(rs.OwnerReferences) == 0 {
+								logToDebug("No owner references found for rs: " + podName)
+								path = filepath.Join(pkg.ConfigData.LogsPath, namespace, fmt.Sprintf("replicaset.%s.metadata", rsName))
+								f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+								if err != nil {
+									logToDebug(err.Error())
+								}
+								defer f.Close() // Remember to close the file
+								f.WriteString(fmt.Sprintf("%s ; %s\n", time.Now().Format("2006-01-02 15:04:05"), podName))
+							} else {
+								rsOwnerRef := rs.OwnerReferences[0]
+								if rsOwnerRef.Kind == "Deployment" {
+									deploymentName := rsOwnerRef.Name
+									deployment, err := cs.AppsV1().Deployments(ns).Get(ctx, deploymentName, metav1.GetOptions{})
+									if err != nil {
+										logToDebug(fmt.Sprintf("Error fetching Deployment %s: %v", deploymentName, err))
+									}
+									//Its a standalone deployment
+									if len(deployment.OwnerReferences) == 0 {
+										logToDebug("Parent deployment found for pod: " + podName)
+										path = filepath.Join(pkg.ConfigData.LogsPath, namespace, fmt.Sprintf("deployment.%s.metadata", deploymentName))
+										f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+										if err != nil {
+											logToDebug(err.Error())
+										}
+										defer f.Close() // Remember to close the file
+										f.WriteString(fmt.Sprintf("%s ; %s\n", time.Now().Format("2006-01-02 15:04:05"), podName))
+									}
+								}
+							}
+						}
+					}
+
+					logToDebug("Watching logs for pod: " + podName)
 					for {
 						opts := &v1.PodLogOptions{
 							Follow: true,
 						}
-						req := cs.CoreV1().Pods(namespace).GetLogs(name, opts)
+						req := cs.CoreV1().Pods(namespace).GetLogs(podName, opts)
 						stream, err := req.Stream(ctx)
 						if err != nil {
 							logToDebug(err.Error())
@@ -92,11 +144,11 @@ func main() {
 						if _, err := io.Copy(file, stream); err != nil {
 							logToDebug(err.Error())
 						}
-						logToDebug("Stream closed for pod: " + name)
+						logToDebug("Stream closed for pod: " + podName)
 						break
 					}
 
-				}(pod.Name)
+				}(pod.Name, pod.Namespace)
 			}
 		}
 	}()
