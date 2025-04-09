@@ -14,36 +14,8 @@ import (
 )
 
 // Example color definitions
-const (
-	ColorRed    = "\033[31m"
-	ColorGreen  = "\033[32m"
-	ColorYellow = "\033[33m"
-	ColorReset  = "\033[0m"
-)
 
-func colorizeDiff(diff string) string {
-	var b strings.Builder
-	lines := strings.Split(diff, "\n")
-
-	for _, line := range lines {
-		switch {
-		case strings.HasPrefix(line, "-"):
-			b.WriteString(ColorRed) // Red
-			b.WriteString(line)
-			b.WriteString(ColorReset + "\n")
-		case strings.HasPrefix(line, "+"):
-			b.WriteString(ColorGreen) // Green
-			b.WriteString(line)
-			b.WriteString(ColorReset + "\n")
-		default:
-			b.WriteString(line)
-			b.WriteString("\n")
-		}
-	}
-	return b.String()
-}
 func newDiffCommand() *cobra.Command {
-	var tail int
 	var excludePatterns []string
 	cmd := &cobra.Command{
 		Use:   "diff",
@@ -55,14 +27,6 @@ func newDiffCommand() *cobra.Command {
 			logSlice := make([]string, 0)
 			switch typ {
 			case "pod":
-				// path := filepath.Join(pkg.ConfigData.LogsPath, namespace, fmt.Sprintf("%s.log", name))
-				// logs, err := os.ReadFile(path)
-				// if err != nil {
-				// 	cmd.Println("No logs found for pod:", name)
-				// 	return
-				// }
-				// cmd.Println("-------------------------------------------")
-				// cmd.Println("Logs from pod ", name, ":", "\n", string(logs))
 				cmd.Println("Diff are not available for pod:", name)
 
 			case "deployment":
@@ -75,7 +39,7 @@ func newDiffCommand() *cobra.Command {
 				}
 				buf := bufio.NewScanner(f)
 				buf.Split(bufio.ScanLines)
-				for buf.Scan() && parsedLines < tail {
+				for buf.Scan() && parsedLines < maxPods {
 					line := buf.Text()
 					if line == "" {
 						continue
@@ -107,7 +71,7 @@ func newDiffCommand() *cobra.Command {
 				buf := bufio.NewScanner(f)
 				buf.Split(bufio.ScanLines)
 				parsedLines := 0
-				for buf.Scan() && parsedLines < tail {
+				for buf.Scan() && parsedLines < maxPods {
 					line := buf.Text()
 					if line == "" {
 						continue
@@ -157,14 +121,13 @@ func newDiffCommand() *cobra.Command {
 					cmd.Println("No diff found between ", podSlice[i], " and ", podSlice[j])
 					continue
 				}
-				cmd.Println(colorizeDiff(result), "\n--------------------------------------------------")
+				cmd.Println(pkg.ColorizeDiff(result), "\n--------------------------------------------------")
 			}
 			cmd.Println("End of diff logs")
 			cmd.Println(`
-Total pods: `, len(podSlice))
+Total processed pods: `, len(podSlice))
 		},
 	}
-	cmd.Flags().IntVar(&tail, "tail", 10, "No. of lines to use for diff")
 
 	// In your command flags:
 	cmd.Flags().StringSliceVar(&excludePatterns, "exclude-patterns", nil, "Regex patterns to exclude from diff (e.g., timestamps)")

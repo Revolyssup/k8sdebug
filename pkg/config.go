@@ -11,6 +11,15 @@ import (
 
 var ConfigFilePath string
 
+type Color string
+
+const (
+	ColorRed    Color = "\033[31m"
+	ColorGreen  Color = "\033[32m"
+	ColorYellow Color = "\033[33m"
+	ColorReset  Color = "\033[0m"
+)
+
 type Config struct {
 	LogsPath  string
 	LoggerPID int
@@ -18,6 +27,40 @@ type Config struct {
 
 var ConfigData Config = Config{
 	LogsPath: "/tmp/k8sdebug/logs",
+}
+
+func ColorizeDiff(diff string) string {
+	var b strings.Builder
+	lines := strings.Split(diff, "\n")
+
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "-"):
+			b.WriteString(string(ColorRed))
+			b.WriteString(line)
+			b.WriteString(string(ColorReset) + "\n")
+		case strings.HasPrefix(line, "+"):
+			b.WriteString(string(ColorGreen))
+			b.WriteString(line)
+			b.WriteString(string(ColorReset) + "\n")
+		default:
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func ColorLine(s string, color Color) string {
+	var b strings.Builder
+	lines := strings.Split(s, "\n")
+	for _, line := range lines {
+		b.WriteString(string(color))
+		b.WriteString(line)
+		b.WriteString(string(ColorReset) + "\n")
+
+	}
+	return b.String()
 }
 
 func init() {

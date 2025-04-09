@@ -64,6 +64,7 @@ func main() {
 			switch event.Type {
 			case watch.Added:
 				pod := event.Object.(*v1.Pod)
+				creationTime := pod.CreationTimestamp.Time
 				go func(podName, podNs string) {
 					time.Sleep(time.Second * 5) // Wait for the pod to be ready
 					logToDebug("New pod added: " + event.Object.(*v1.Pod).Name)
@@ -82,10 +83,13 @@ func main() {
 					logToDebug("TYPE IS " + typ)
 					// Check whether pod's parent matched the deployment
 					owner := pod.GetOwnerReferences()
+
 					// It's a standalone pod
 					if len(owner) == 0 {
+						logToDebug("HERE")
 						logToDebug("No owner references found for pod: " + podName)
 					} else {
+						logToDebug("NOWHERE")
 						ref := owner[0]
 						if ref.Kind == "ReplicaSet" {
 							rsName := ref.Name
@@ -104,7 +108,7 @@ func main() {
 									logToDebug(err.Error())
 								}
 								defer f.Close() // Remember to close the file
-								f.WriteString(fmt.Sprintf("%s ; %s\n", time.Now().Format("2006-01-02 15:04:05"), podName))
+								f.WriteString(fmt.Sprintf("%s ; %s\n", creationTime.Format("2006-01-02 15:04:05"), podName))
 							} else {
 								rsOwnerRef := rs.OwnerReferences[0]
 								if rsOwnerRef.Kind == "Deployment" {
@@ -122,7 +126,7 @@ func main() {
 											logToDebug(err.Error())
 										}
 										defer f.Close() // Remember to close the file
-										f.WriteString(fmt.Sprintf("%s ; %s\n", time.Now().Format("2006-01-02 15:04:05"), podName))
+										f.WriteString(fmt.Sprintf("%s ; %s\n", creationTime.Format("2006-01-02 15:04:05"), podName))
 									}
 								}
 							}

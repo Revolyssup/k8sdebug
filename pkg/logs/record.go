@@ -52,6 +52,13 @@ func startLogger() {
 			return
 		}
 	}
+	// RUN will triggere old data to be gone
+	//TODO: Is this really necessary?
+	if err := os.RemoveAll(pkg.ConfigData.LogsPath); err != nil {
+		fmt.Println("Error cleaning up logs:", err)
+		return
+	}
+	fmt.Println("CLEANED UP")
 	if _, err := os.Stat(binpath); os.IsNotExist(err) {
 		// Does not exist, will try to build it
 		fmt.Println("Building the logger...")

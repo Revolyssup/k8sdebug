@@ -15,10 +15,9 @@ func main() {
 		Use:   "k8sdebug",
 		Short: "Debug application in Kubernetes",
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
-			cmd.Println("Post run command executed")
 			content := ""
 			content += "LOGS_PATH=" + pkg.ConfigData.LogsPath + "\n"
-			fmt.Println("LoggerPID:", pkg.ConfigData.LoggerPID)
+			cmd.Println(pkg.ColorLine(fmt.Sprintf("Loggger ID = %d", pkg.ConfigData.LoggerPID), pkg.ColorGreen))
 			pid, err := strconv.Atoi(strconv.Itoa(pkg.ConfigData.LoggerPID))
 			if err != nil {
 				cmd.Println("Error converting LoggerPID to string:", err)
