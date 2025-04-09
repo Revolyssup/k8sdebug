@@ -28,6 +28,9 @@ func newRecordCommand() *cobra.Command {
 				startLogger()
 			case "stop":
 				stopLogger()
+			case "restart":
+				stopLogger()
+				startLogger()
 			default:
 				cmd.Println("Invalid argument. Use 'run' or 'stop'.")
 			}
@@ -99,6 +102,7 @@ func stopLogger() {
 		fmt.Println("Error stopping logger:", err)
 		return
 	}
+	fmt.Println("STOPPED")
 }
 func init() {
 	home, err := os.UserHomeDir()

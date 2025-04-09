@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/revolyssup/k8sdebug/pkg"
 	"github.com/spf13/cobra"
 )
 
 var typ string
+var onlyName bool
 
 func newShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -32,7 +34,6 @@ func newShowCommand() *cobra.Command {
 					cmd.Println("No logs found for pod:", name)
 					return
 				}
-				cmd.Println("-------------------------------------------")
 				cmd.Println(pkg.ColorLine("Logs from pod ", pkg.ColorYellow), name, ":", "\n", string(logs))
 
 			case "deployment":
@@ -97,11 +98,12 @@ func newShowCommand() *cobra.Command {
 			cmd.Println("Total pods scanned: ", readAllPodLogs(podNames, logPaths, timeStamps, maxLinesToRead))
 		},
 	}
-
+	cmd.Flags().BoolVar(&onlyName, "only-names", false, "display only names")
 	return cmd
 }
 
 func readAllPodLogs(podNames []string, logPath []string, timestamps []string, maxLines int) int {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
 	initial := 0
 	final := len(podNames)
 	if latestFirst {
@@ -117,6 +119,16 @@ func readAllPodLogs(podNames []string, logPath []string, timestamps []string, ma
 	}
 	fmt.Println("INITIAL", initial, "FINAL", final)
 	for i := initial; i < final; i++ {
+		if onlyName {
+			if i == initial {
+				fmt.Fprintln(w, "Pod Name\tCreated At")
+			}
+			fmt.Fprintln(w, fmt.Sprintf("%s\t%s", podNames[i], timestamps[i]))
+			if i == final-1 {
+				w.Flush()
+			}
+			continue
+		}
 		file, err := os.Open(logPath[i])
 		if err != nil {
 			fmt.Println("file not found for pod:", podNames[i])
@@ -124,8 +136,6 @@ func readAllPodLogs(podNames []string, logPath []string, timestamps []string, ma
 		}
 		defer file.Close()
 		logs := readNLines(file, maxLines)
-		fmt.Println("-------------------------------------------")
-
 		fmt.Println(pkg.ColorLine(fmt.Sprintf("Logs from pod: %s - %s", podNames[i], timestamps[i]), pkg.ColorYellow), string(logs))
 	}
 	return len(podNames) - initial
@@ -139,6 +149,9 @@ func readNLines(file *os.File, n int) string {
 	for ; buf.Scan(); i++ {
 		line := buf.Text()
 		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return ""
 	}
 	final := len(lines)
 	fmt.Println("Total lines ", len(lines), " and n is ", n)
