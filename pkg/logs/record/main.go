@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +27,15 @@ var labels = os.Getenv("LABELS")
 var typ = os.Getenv("TYPE")
 var debugFile *os.File
 
+var indexFilePath = filepath.Join(pkg.ConfigData.LogsPath, "checkpoint.json")
+
+type checkpoint struct {
+	LastResourceVersion string
+	FileOffsets         map[string]int64 // Filepath -> Offset to last entry in that file.
+}
+
+var checkpointData checkpoint
+
 func logToDebug(msg string) {
 	if _, err := debugFile.WriteString(fmt.Sprintf("%s - %s\n", time.Now().Format("2006-01-02 15:04:05"), msg)); err != nil {
 		fmt.Println(err)
@@ -45,9 +55,67 @@ func initialiseDebugFile() {
 		}
 	}
 }
+
+func readCheckpoint() {
+	// Open the file with read/write mode, create it if it doesn't exist
+	file, err := os.OpenFile(indexFilePath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		panic("failed to open/create checkpoint file: " + err.Error())
+	}
+	defer file.Close()
+
+	// Read the file content
+	bytCheckpnt, err := io.ReadAll(file)
+	if err != nil {
+		panic("failed to read checkpoint file: " + err.Error())
+	}
+
+	// If the file is empty (newly created), initialize default data
+	if len(bytCheckpnt) == 0 {
+		checkpointData = checkpoint{
+			LastResourceVersion: "",
+			FileOffsets:         make(map[string]int64),
+		}
+		// Marshal the default data and write it to the file
+		data, err := json.Marshal(checkpointData)
+		if err != nil {
+			panic("failed to marshal default checkpoint data: " + err.Error())
+		}
+		if _, err := file.Write(data); err != nil {
+			panic("failed to write default checkpoint data: " + err.Error())
+		}
+		return
+	}
+
+	// Unmarshal existing data
+	if err := json.Unmarshal(bytCheckpnt, &checkpointData); err != nil {
+		panic("failed to unmarshal checkpoint data: " + err.Error())
+	}
+}
+
+func writeCheckpoint() {
+	bytCheckpnt, err := json.Marshal(checkpointData)
+	if err != nil {
+		panic("could not read the checkpoint data at")
+	}
+	file, err := os.OpenFile(indexFilePath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return
+	}
+	_, err = file.Write(bytCheckpnt)
+	if err != nil {
+		fmt.Println("Error writing to file:", err)
+		return
+	}
+	file.Close()
+}
+
 func main() {
 	logToDebug("Starting logger...")
 	initialiseDebugFile()
+	readCheckpoint()
+	defer writeCheckpoint()
 	kubeconfig := clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
@@ -65,6 +133,9 @@ func main() {
 	opts := metav1.ListOptions{}
 	if labels != "" {
 		opts.LabelSelector = labels
+	}
+	if checkpointData.LastResourceVersion != "" {
+		opts.ResourceVersion = checkpointData.LastResourceVersion
 	}
 	initialList, err := cs.CoreV1().Pods(namespace).List(context.TODO(), opts)
 	if err != nil {
@@ -140,6 +211,8 @@ func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, name
 	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	f.Close()
 
+	//TODO: Can there be a race condition here?
+	checkpointData.LastResourceVersion = pod.ResourceVersion
 	//Start watching and recording logs
 	go func(podName string) {
 		logToDebug("Watching logs for pod: " + podName)
