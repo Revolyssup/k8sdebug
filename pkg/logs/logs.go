@@ -48,5 +48,7 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(newShowCommand())
 	cmd.AddCommand(newCleanupCommand())
 	cmd.AddCommand(newDiffCommand())
+	cmd.AddCommand(newExportCmd())
+	cmd.AddCommand(newImportCmd())
 	return cmd
 }
