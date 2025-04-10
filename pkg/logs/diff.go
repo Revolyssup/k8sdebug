@@ -6,19 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
+	"github.com/pmezard/go-difflib/difflib"
 	"github.com/revolyssup/k8sdebug/pkg"
 	"github.com/spf13/cobra"
 )
 
-var typ string
-var onlyName bool
-
-func newShowCommand() *cobra.Command {
+func newDiffCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "show",
-		Short: "Show logs of a pod",
+		Use:   "diff",
+		Short: "diff logs of a pod",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
@@ -95,79 +92,35 @@ func newShowCommand() *cobra.Command {
 					totalPods++
 				}
 			}
-			podNames, logSlice, timeStamps := getPodLogs(podNames, logPaths, timeStamps)
-			for i := range podNames {
-				fmt.Println(pkg.ColorLine(fmt.Sprintf("Logs from pod: %s - %s", podNames[i], timeStamps[i]), pkg.ColorYellow), string(logSlice[i]))
-			}
-			cmd.Println("Total pods scanned: ", len(podNames))
+			fmt.Println("HERE")
+			printPodDiffs(getPodLogs(podNames, logPaths, timeStamps))
 		},
 	}
 	cmd.Flags().BoolVar(&onlyName, "only-names", false, "display only names")
 	return cmd
 }
 
-func getPodLogs(podNames []string, logPath []string, timestamps []string) (filteredPodNames []string, logSlice []string, newTimestamps []string) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
-	initial := 0
-	final := len(podNames)
-	if latestFirst {
-		initial = len(podNames) - maxPods
-	} else {
-		final = maxPods
-	}
-	if initial < 0 {
-		initial = 0
-	}
-	if final > len(podNames) {
-		final = len(podNames)
-	}
-	for i := initial; i < final; i++ {
-		if onlyName {
-			if i == initial {
-				fmt.Fprintln(w, "Pod Name\tCreated At")
-			}
-			fmt.Fprintln(w, fmt.Sprintf("%s\t%s", podNames[i], timestamps[i]))
-			if i == final-1 {
-				w.Flush()
-			}
-			continue
+func printPodDiffs(podNames []string, logSlice []string, timestamps []string) {
+	fmt.Println("HEREE", podNames)
+	for i := 0; i < len(podNames)-1; i++ {
+		j := i + 1
+		fmt.Println("Diff between ", podNames[i], " and ", podNames[j], ":")
+		diff := difflib.UnifiedDiff{
+			A:        difflib.SplitLines(logSlice[i]),
+			B:        difflib.SplitLines(logSlice[j]),
+			FromFile: podNames[i],
+			ToFile:   podNames[j],
+			Context:  3,
 		}
-		file, err := os.Open(logPath[i])
+		result, err := difflib.GetUnifiedDiffString(diff)
 		if err != nil {
-			fmt.Println("file not found for pod:", podNames[i])
+			fmt.Println("Error getting diff:", err)
+			return
+		}
+		if result == "" {
+			fmt.Println("No diff found between ", podNames[i], " and ", podNames[j])
 			continue
 		}
-		defer file.Close()
-		logs := readNLines(file)
-		filteredPodNames = append(filteredPodNames, podNames[i])
-		newTimestamps = append(newTimestamps, timestamps[i])
-		logSlice = append(logSlice, logs)
+		fmt.Println(pkg.ColorizeDiff(result), "\n--------------------------------------------------")
 	}
-	return
-}
-
-func readNLines(file *os.File) string {
-	n := maxLinesToRead
-	var lines []string
-	i := 0
-	buf := bufio.NewScanner(file)
-	initial := i
-	for ; buf.Scan(); i++ {
-		line := buf.Text()
-		lines = append(lines, line)
-	}
-	if len(lines) == 0 {
-		return ""
-	}
-	final := len(lines)
-	fmt.Println("Total lines ", len(lines), " and n is ", n)
-	if bottomFile {
-		initial = len(lines) - n
-	} else {
-		final = n
-	}
-	if initial < 0 {
-		initial = 0
-	}
-	return strings.Join(lines[initial:final], "\n")
 }
