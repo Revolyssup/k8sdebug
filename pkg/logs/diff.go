@@ -92,7 +92,6 @@ func newDiffCommand() *cobra.Command {
 					totalPods++
 				}
 			}
-			fmt.Println("HERE")
 			printPodDiffs(getPodLogs(podNames, logPaths, timeStamps))
 		},
 	}
@@ -101,10 +100,12 @@ func newDiffCommand() *cobra.Command {
 }
 
 func printPodDiffs(podNames []string, logSlice []string, timestamps []string) {
-	fmt.Println("HEREE", podNames)
 	for i := 0; i < len(podNames)-1; i++ {
 		j := i + 1
 		fmt.Println("Diff between ", podNames[i], " and ", podNames[j], ":")
+		if onlyName {
+			continue
+		}
 		diff := difflib.UnifiedDiff{
 			A:        difflib.SplitLines(logSlice[i]),
 			B:        difflib.SplitLines(logSlice[j]),

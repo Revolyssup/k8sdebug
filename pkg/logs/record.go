@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/revolyssup/k8sdebug/pkg"
 	"github.com/spf13/cobra"
@@ -15,6 +16,7 @@ import (
 var (
 	namespace string
 )
+var labels string
 
 func newRecordCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -30,12 +32,15 @@ func newRecordCommand() *cobra.Command {
 				stopLogger()
 			case "restart":
 				stopLogger()
+				time.Sleep(1 * time.Second) // TODO: Sync better than sleeping.
 				startLogger()
 			default:
 				cmd.Println("Invalid argument. Use 'run' or 'stop'.")
 			}
 		},
 	}
+
+	cmd.Flags().StringVarP(&labels, "labels", "l", "", "list of key value pairs to use as labels while filtering pods.")
 	return cmd
 }
 
@@ -77,6 +82,9 @@ func startLogger() {
 	cmd.Env = append(cmd.Env, fmt.Sprintf("NAMESPACE=%s", namespace))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("LOGS_PATH=%s", pkg.ConfigData.LogsPath))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("TYPE=%s", typ))
+	if labels != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("LABELS=%s", labels))
+	}
 	if err := cmd.Start(); err != nil {
 		fmt.Println("Error starting logger:", err)
 		return

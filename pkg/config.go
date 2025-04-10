@@ -11,6 +11,11 @@ import (
 
 var ConfigFilePath string
 
+const (
+	LOGGER_PID = "LOGGER_PID"
+	LOGS_PATH  = "LOGS_PATH"
+)
+
 type Color string
 
 const (

@@ -14,10 +14,6 @@ func newCleanupCommand() *cobra.Command {
 		Use:   "cleanup",
 		Short: "Cleanup logs of a pod",
 		Run: func(cmd *cobra.Command, args []string) {
-			// if pkg.ConfigData.LoggerPID != 0 {
-			// 	cmd.Println("Logger still running. Please first stop the logger")
-			// 	return
-			// }
 			cmd.Println("Cleaning up logs...")
 			if hardClean {
 				if err := os.RemoveAll(pkg.ConfigData.LogsPath); err != nil {

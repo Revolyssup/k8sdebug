@@ -22,6 +22,7 @@ import (
 )
 
 var namespace = os.Getenv("NAMESPACE")
+var labels = os.Getenv("LABELS")
 var typ = os.Getenv("TYPE")
 var debugFile *os.File
 
@@ -31,9 +32,7 @@ func logToDebug(msg string) {
 	}
 }
 
-func main() {
-	logToDebug("Starting logger...")
-	//Create the debug file
+func initialiseDebugFile() {
 	if _, err := os.Stat(filepath.Join(pkg.ConfigData.LogsPath, ".k8s.debug")); os.IsNotExist(err) {
 		debugFile, err = os.Create(filepath.Join(pkg.ConfigData.LogsPath, ".k8s.debug"))
 		if err != nil {
@@ -45,7 +44,10 @@ func main() {
 			panic(err)
 		}
 	}
-
+}
+func main() {
+	logToDebug("Starting logger...")
+	initialiseDebugFile()
 	kubeconfig := clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
@@ -60,20 +62,24 @@ func main() {
 		This order is important because the replicaset.metadata and deployment.metadata are Append only logs containing in
 		chronological order.
 	*/
-	initialList, err := cs.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
+	opts := metav1.ListOptions{}
+	if labels != "" {
+		opts.LabelSelector = labels
+	}
+	initialList, err := cs.CoreV1().Pods(namespace).List(context.TODO(), opts)
 	if err != nil {
-		logToDebug(err.Error())
+		logToDebug("Exiting runner..." + err.Error())
+		return
 	}
 	pods := mergeSort(initialList.Items)
 	for _, pod := range pods {
 		processPod(ctx, cs, &pod, namespace)
 	}
-
-	watcher, err := cs.CoreV1().Pods(namespace).Watch(context.TODO(), metav1.ListOptions{
-		ResourceVersion: initialList.ResourceVersion,
-	})
+	opts.ResourceVersion = initialList.ResourceVersion
+	watcher, err := cs.CoreV1().Pods(namespace).Watch(context.TODO(), opts)
 	if err != nil {
-		logToDebug(err.Error())
+		logToDebug("Exiting runner..." + err.Error())
+		return
 	}
 	logToDebug("Watching for new pods in namespace" + namespace)
 	go func() {
@@ -92,7 +98,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		select {
-		case <-sigchan: // Wait for interrupt
+		case <-sigchan: // Wait for interrupt triggered via `k8sdebug logs runner stop`
 			cancel()
 			wg.Done()
 		}
@@ -102,7 +108,7 @@ func main() {
 }
 
 // Process pod first synchronously append metadata to the metadata log because order is important.
-// And then starts a go routine that watched for pods and writes to log files.
+// And then starts a go routine that watches for pod logs and writes to log files.
 func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, namespace string) {
 	creationTime := pod.CreationTimestamp.Time
 	podName := pod.Name
@@ -115,7 +121,7 @@ func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, name
 		logToDebug(err.Error())
 		return
 	}
-	owner := GetLastNode(&PodNode{
+	owner := getLastNode(&PodNode{
 		pod: pod,
 		cs:  cs,
 	})
@@ -207,14 +213,12 @@ type Node interface {
 	Name() string
 }
 
-func GetLastNode(n Node) Node {
+func getLastNode(n Node) Node {
 	for {
-		logToDebug("node process" + n.Type())
 		nextNode := n.Next()
 		if nextNode == nil {
 			return n
 		}
-		logToDebug("got nextnode" + nextNode.Type())
 		n = nextNode
 	}
 }
@@ -271,7 +275,6 @@ func (p *ReplicasetNode) Next() Node {
 	if len(owners) == 0 {
 		return nil
 	}
-
 	owner := owners[0]
 	name := owner.Name
 	switch owner.Kind {

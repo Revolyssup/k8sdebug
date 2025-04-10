@@ -96,8 +96,19 @@ func newShowCommand() *cobra.Command {
 				}
 			}
 			podNames, logSlice, timeStamps := getPodLogs(podNames, logPaths, timeStamps)
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
 			for i := range podNames {
-				fmt.Println(pkg.ColorLine(fmt.Sprintf("Logs from pod: %s - %s", podNames[i], timeStamps[i]), pkg.ColorYellow), string(logSlice[i]))
+				if onlyName {
+					if i == 0 {
+						fmt.Fprintln(w, "Pod Name\tCreated At")
+					}
+					fmt.Fprintln(w, fmt.Sprintf("%s\t%s", podNames[i], timeStamps[i]))
+					if i == len(podNames)-1 {
+						w.Flush()
+					}
+				} else {
+					fmt.Println(pkg.ColorLine(fmt.Sprintf("Logs from pod: %s - %s", podNames[i], timeStamps[i]), pkg.ColorYellow), string(logSlice[i]))
+				}
 			}
 			cmd.Println("Total pods scanned: ", len(podNames))
 		},
@@ -107,7 +118,6 @@ func newShowCommand() *cobra.Command {
 }
 
 func getPodLogs(podNames []string, logPath []string, timestamps []string) (filteredPodNames []string, logSlice []string, newTimestamps []string) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
 	initial := 0
 	final := len(podNames)
 	if latestFirst {
@@ -122,14 +132,9 @@ func getPodLogs(podNames []string, logPath []string, timestamps []string) (filte
 		final = len(podNames)
 	}
 	for i := initial; i < final; i++ {
+		filteredPodNames = append(filteredPodNames, podNames[i])
+		newTimestamps = append(newTimestamps, timestamps[i])
 		if onlyName {
-			if i == initial {
-				fmt.Fprintln(w, "Pod Name\tCreated At")
-			}
-			fmt.Fprintln(w, fmt.Sprintf("%s\t%s", podNames[i], timestamps[i]))
-			if i == final-1 {
-				w.Flush()
-			}
 			continue
 		}
 		file, err := os.Open(logPath[i])
@@ -139,8 +144,6 @@ func getPodLogs(podNames []string, logPath []string, timestamps []string) (filte
 		}
 		defer file.Close()
 		logs := readNLines(file)
-		filteredPodNames = append(filteredPodNames, podNames[i])
-		newTimestamps = append(newTimestamps, timestamps[i])
 		logSlice = append(logSlice, logs)
 	}
 	return
@@ -160,7 +163,6 @@ func readNLines(file *os.File) string {
 		return ""
 	}
 	final := len(lines)
-	fmt.Println("Total lines ", len(lines), " and n is ", n)
 	if bottomFile {
 		initial = len(lines) - n
 	} else {
