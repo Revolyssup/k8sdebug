@@ -7,6 +7,7 @@ import (
 
 	"github.com/revolyssup/k8sdebug/pkg"
 	"github.com/revolyssup/k8sdebug/pkg/logs"
+	"github.com/revolyssup/k8sdebug/pkg/portforward"
 	"github.com/spf13/cobra"
 )
 
@@ -30,5 +31,6 @@ func main() {
 		},
 	}
 	rootCmd.AddCommand(logs.NewCommand())
+	rootCmd.AddCommand(portforward.NewCommand())
 	rootCmd.Execute()
 }
