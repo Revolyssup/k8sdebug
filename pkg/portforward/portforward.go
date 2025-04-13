@@ -2,6 +2,7 @@ package portforward
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -128,7 +129,6 @@ func NewCommand() *cobra.Command {
 			if err != nil {
 				panic(err)
 			}
-			defer listener.Close()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			go func() {
@@ -139,6 +139,9 @@ func NewCommand() *cobra.Command {
 					default:
 						hostConn, err := listener.Accept()
 						if err != nil {
+							if errors.Is(err, net.ErrClosed) {
+								return // Prolly exiting
+							}
 							fmt.Printf("Accept error: %v", err)
 							continue
 						}
