@@ -36,12 +36,6 @@ type checkpoint struct {
 
 var checkpointData checkpoint
 
-func logToDebug(msg string) {
-	if _, err := debugFile.WriteString(fmt.Sprintf("%s - %s\n", time.Now().Format("2006-01-02 15:04:05"), msg)); err != nil {
-		fmt.Println(err)
-	}
-}
-
 func initialiseDebugFile() {
 	if _, err := os.Stat(filepath.Join(pkg.ConfigData.LogsPath, ".k8s.debug")); os.IsNotExist(err) {
 		debugFile, err = os.Create(filepath.Join(pkg.ConfigData.LogsPath, ".k8s.debug"))
@@ -54,6 +48,8 @@ func initialiseDebugFile() {
 			panic(err)
 		}
 	}
+	os.Stdout = debugFile
+	os.Stderr = debugFile
 }
 
 func readCheckpoint() {
@@ -112,14 +108,14 @@ func writeCheckpoint() {
 }
 
 func main() {
-	logToDebug("Starting logger...")
+	fmt.Println("Starting logger...")
 	initialiseDebugFile()
 	readCheckpoint()
 	defer writeCheckpoint()
 	kubeconfig := clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
-		logToDebug(err.Error())
+		fmt.Println(err.Error())
 	}
 	cs := kubernetes.NewForConfigOrDie(config)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -139,7 +135,7 @@ func main() {
 	}
 	initialList, err := cs.CoreV1().Pods(namespace).List(context.TODO(), opts)
 	if err != nil {
-		logToDebug("Exiting runner..." + err.Error())
+		fmt.Println("Exiting runner..." + err.Error())
 		return
 	}
 	pods := mergeSort(initialList.Items)
@@ -149,10 +145,10 @@ func main() {
 	opts.ResourceVersion = initialList.ResourceVersion
 	watcher, err := cs.CoreV1().Pods(namespace).Watch(context.TODO(), opts)
 	if err != nil {
-		logToDebug("Exiting runner..." + err.Error())
+		fmt.Println("Exiting runner..." + err.Error())
 		return
 	}
-	logToDebug("Watching for new pods in namespace" + namespace)
+	fmt.Println("Watching for new pods in namespace" + namespace)
 	go func() {
 		for event := range watcher.ResultChan() {
 			switch event.Type {
@@ -175,7 +171,7 @@ func main() {
 		}
 	}()
 	wg.Wait()
-	logToDebug("Stopping logger...")
+	fmt.Println("Stopping logger...")
 }
 
 // Process pod first synchronously append metadata to the metadata log because order is important.
@@ -186,10 +182,10 @@ func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, name
 	// podNs := pod.Namespace
 	// TODO: Fix this 5 second wait
 	time.Sleep(time.Second * 5) // Wait for the pod to be ready
-	logToDebug("New pod added: " + pod.Name + "on time " + creationTime.Format("2006-01-02 15:04:05"))
+	fmt.Println("New pod added: " + pod.Name + "on time " + creationTime.Format("2006-01-02 15:04:05"))
 	dir := filepath.Join(pkg.ConfigData.LogsPath, namespace)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		logToDebug(err.Error())
+		fmt.Println(err.Error())
 		return
 	}
 	owner := getLastNode(&PodNode{
@@ -201,7 +197,7 @@ func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, name
 	// Use the advisory lock to write in metadata file
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		logToDebug(err.Error())
+		fmt.Println(err.Error())
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		fmt.Println("Error locking file:", err)
@@ -215,11 +211,11 @@ func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, name
 	checkpointData.LastResourceVersion = pod.ResourceVersion
 	//Start watching and recording logs
 	go func(podName string) {
-		logToDebug("Watching logs for pod: " + podName)
+		fmt.Println("Watching logs for pod: " + podName)
 		path = filepath.Join(dir, podName+".log")
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
-			logToDebug(err.Error())
+			fmt.Println(err.Error())
 		}
 		defer file.Close() // Remember to close the file
 		for {
@@ -229,14 +225,14 @@ func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, name
 			req := cs.CoreV1().Pods(namespace).GetLogs(podName, opts)
 			stream, err := req.Stream(ctx)
 			if err != nil {
-				logToDebug(err.Error())
+				fmt.Println(err.Error())
 				return
 			}
 			defer stream.Close()
 			if _, err := io.Copy(file, stream); err != nil {
-				logToDebug(err.Error())
+				fmt.Println(err.Error())
 			}
-			logToDebug("Stream closed for pod: " + podName)
+			fmt.Println("Stream closed for pod: " + podName)
 			break
 		}
 	}(podName)
@@ -322,7 +318,7 @@ func (p *PodNode) Next() Node {
 	case "ReplicaSet":
 		rs, err := p.cs.AppsV1().ReplicaSets(namespace).Get(context.Background(), name, metav1.GetOptions{})
 		if err != nil {
-			logToDebug(fmt.Sprintf("Error fetching ReplicaSet %s: %v", name, err))
+			fmt.Println(fmt.Sprintf("Error fetching ReplicaSet %s: %v", name, err))
 			return nil
 		}
 		rsNode := &ReplicasetNode{
@@ -354,7 +350,7 @@ func (p *ReplicasetNode) Next() Node {
 	case "Deployment":
 		deps, err := p.cs.AppsV1().Deployments(namespace).Get(context.Background(), name, metav1.GetOptions{})
 		if err != nil {
-			logToDebug(fmt.Sprintf("Error fetching ReplicaSet %s: %v", name, err))
+			fmt.Println(fmt.Sprintf("Error fetching ReplicaSet %s: %v", name, err))
 			return nil
 		}
 		depsNode := DeploymentNode{

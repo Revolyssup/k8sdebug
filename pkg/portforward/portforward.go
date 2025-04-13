@@ -21,11 +21,13 @@ import (
 )
 
 var (
-	namespace string
-	typ       string
-	hostport  string
+	namespace     string
+	typ           string
+	hostport      string
+	containerPort string
 )
 var labels string
+var startingHostPort = 8080
 
 func forwardToPod(hostConn net.Conn, podCon net.Conn) {
 	//Copy data bidirectionally
@@ -133,12 +135,12 @@ func NewCommand() *cobra.Command {
 				dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transporter}, "POST", req.URL())
 				stopChan := make(chan struct{})
 				readyChan := make(chan struct{})
-				hostPort := 8080 + i
-				hostPortStr := fmt.Sprintf("%s:80", strconv.Itoa(hostPort))
+				hostPort := startingHostPort + i
+				hostPortStr := fmt.Sprintf("%s:%s", strconv.Itoa(hostPort), containerPort)
 				connPool = append(connPool, hostPortStr)
 				forwarder, err := portforward.New(dialer, []string{hostPortStr}, stopChan, readyChan, os.Stdout, os.Stderr)
 				if err != nil {
-					fmt.Println("coudnot forward connection for pod", pod.Name)
+					fmt.Println("coudnot forward connection for pod", pod.Name, " :", err.Error())
 					continue
 				}
 				go func() {
@@ -167,5 +169,6 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&policy, "policy", "round-robin", "policy to use while sending requests")
 	cmd.Flags().StringVarP(&labels, "labels", "l", "", "list of key value pairs to use as labels while filtering pods.")
 	cmd.Flags().StringVar(&hostport, "hostport", "3000", "host port on which requests will be sent")
+	cmd.Flags().StringVar(&containerPort, "containerport", "80", "container port on which requests will be sent")
 	return cmd
 }
