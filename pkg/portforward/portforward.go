@@ -10,24 +10,33 @@ import (
 	"os/signal"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/revolyssup/k8sdebug/pkg"
 	"github.com/spf13/cobra"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
 
-var (
-	namespace     string
-	typ           string
-	hostport      string
-	containerPort string
-)
-var labels string
 var startingHostPort = 8080
+var (
+	namespace          string
+	typ                string
+	hostport           string
+	containerPort      string
+	labels             string
+	policy             string
+	connPool           []string
+	freeList           = make([]int, 0)
+	podNameToPoolIndex map[string]int
+	fromWatch          = -1
+	indexToStopChan    = make(map[int]chan struct{}) // Track stop channels by index to close previous port forwards
+)
 
 func forwardToPod(hostConn net.Conn, podCon net.Conn) {
 	//Copy data bidirectionally
@@ -35,12 +44,9 @@ func forwardToPod(hostConn net.Conn, podCon net.Conn) {
 	io.Copy(podCon, hostConn)
 }
 
-var connPool []string
-
-var policy string
-
 func getPodConnection(fw forwarder) (net.Conn, error) {
-	podConn, err := net.Dial("tcp", fmt.Sprintf(":%d", fw.Port()))
+	port := fw.Port()
+	podConn, err := net.Dial("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
 		return nil, err
 	}
@@ -48,24 +54,66 @@ func getPodConnection(fw forwarder) (net.Conn, error) {
 }
 
 type forwarder interface {
-	Port() int
+	Port() string
 }
 
 type roundRobin struct {
 	connNumber int
+	mx         sync.Mutex
 }
 
-func (rr *roundRobin) Port() int {
-	portNum := 8080 + (rr.connNumber % len(connPool))
-	rr.connNumber++
-	return portNum
+func (rr *roundRobin) Port() string {
+	rr.mx.Lock()
+	defer rr.mx.Unlock()
+
+	initial := rr.connNumber
+	for {
+		rr.connNumber = (rr.connNumber + 1) % len(connPool)
+		portNum := connPool[rr.connNumber]
+		if portNum != "" {
+			// Check if port is actually listening
+			conn, err := net.DialTimeout("tcp", ":"+portNum, 50*time.Millisecond)
+			if err == nil {
+				conn.Close()
+				fmt.Println("PORT RETURNED ", portNum)
+				return portNum
+			}
+		}
+		if rr.connNumber == initial {
+			break // Avoid infinite loop
+		}
+	}
+	return ""
 }
+
 func getForwarder(policy string) forwarder {
 	switch policy {
 	case "round-robin":
 		return &roundRobin{}
 	}
 	return nil
+}
+
+var mx sync.Mutex
+
+func getFreeIndex() int {
+	mx.Lock()
+	defer mx.Unlock()
+	if len(freeList) != 0 {
+		i := freeList[0]
+		connPool[i] = ""
+		freeList = freeList[1:]
+		return i
+	}
+	connPool = append(connPool, "") //Placeholder to increase the size
+	return len(connPool) - 1
+}
+
+func addFreeIndex(i int) {
+	mx.Lock()
+	defer mx.Unlock()
+	freeList = append(freeList, i)
+	connPool[i] = "" // RESET
 }
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -114,14 +162,23 @@ func NewCommand() *cobra.Command {
 			if labels != "" {
 				opts.LabelSelector = labels
 			}
-			initialList, err := cs.CoreV1().Pods(namespace).List(context.TODO(), opts)
+			initialList, err := cs.CoreV1().Pods(namespace).List(ctx, opts)
 			if err != nil {
 				panic("Exiting runner..." + err.Error())
 			}
-			connPool = make([]string, 0)
 			pods := initialList.Items
+			connPool = make([]string, len(pods))
+			podNameToPoolIndex = make(map[string]int, len(pods))
 			fmt.Printf(pkg.ColorLine(fmt.Sprintf("listening on %s using %s policy across %d pods\n", hostport, policy, len(pods)), pkg.ColorGreen))
-			for i, pod := range pods {
+			startPortForward := func(i int, pod v1.Pod) (string, error) {
+				if i == fromWatch {
+					i = getFreeIndex()
+				}
+				if stopChan, exists := indexToStopChan[i]; exists {
+					close(stopChan)
+					delete(indexToStopChan, i)
+				}
+				fmt.Println("WILL TRY TO CREATE AT INDEX", i)
 				req := cs.CoreV1().RESTClient().Post().
 					Resource("pods").
 					Namespace(namespace).
@@ -130,27 +187,71 @@ func NewCommand() *cobra.Command {
 				transporter, upgrader, err := spdy.RoundTripperFor(config)
 				if err != nil {
 					fmt.Println("coudnot open connection for pod", pod.Name)
-					continue
+					return "", err
 				}
 				dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transporter}, "POST", req.URL())
 				stopChan := make(chan struct{})
+				indexToStopChan[i] = stopChan // Track new stop channel
 				readyChan := make(chan struct{})
 				hostPort := startingHostPort + i
+
 				hostPortStr := fmt.Sprintf("%s:%s", strconv.Itoa(hostPort), containerPort)
-				connPool = append(connPool, hostPortStr)
+				connPool[i] = strconv.Itoa(hostPort)
+				podNameToPoolIndex[pod.Name] = i
 				forwarder, err := portforward.New(dialer, []string{hostPortStr}, stopChan, readyChan, os.Stdout, os.Stderr)
 				if err != nil {
-					fmt.Println("coudnot forward connection for pod", pod.Name, " :", err.Error())
-					continue
+					connPool[i] = "" // Reset connPool entry
+					addFreeIndex(i)  // Return index to freeList
+					return "", fmt.Errorf("port-forward setup failed: %v", err)
 				}
 				go func() {
+					fmt.Println("FORWARDER WILL RUN FOR ", hostPortStr)
 					if err := forwarder.ForwardPorts(); err != nil {
-						// errChan <- fmt.Errorf("port forwarding failed: %v", err)
-						fmt.Println("coudnot forward connection for pod", pod.Name)
+						fmt.Println("coud not forward connection for pod", pod.Name)
 					}
 				}()
+				return hostPortStr, nil
+			}
+			for i, pod := range pods {
+				startPortForward(i, pod)
+			}
+			opts.ResourceVersion = initialList.ResourceVersion
+			watcher, err := cs.CoreV1().Pods(namespace).Watch(ctx, opts)
+			if err != nil {
+				fmt.Println("could not create a watcher for pods")
+				return
 			}
 			var wg sync.WaitGroup
+			go func() {
+				for event := range watcher.ResultChan() {
+					switch event.Type {
+					case watch.Added:
+						pod := event.Object.(*v1.Pod)
+						if pod == nil {
+							continue
+						}
+						fmt.Printf("new pod recieved: %s. will try to create portforward\n", pod.Name)
+						//TODO: find a better way
+						time.Sleep(2 * time.Second) //Wait for pod to start
+						addr, err := startPortForward(fromWatch, *pod)
+						if err != nil {
+							fmt.Printf("could not create port forward for %s\n", pod.Name)
+							continue
+						}
+						fmt.Println(pkg.ColorLine(fmt.Sprintf("New port forward created for pod %s on %s", pod.Name, addr), pkg.ColorGreen))
+					case watch.Deleted:
+						pod := event.Object.(*v1.Pod)
+						i := podNameToPoolIndex[pod.Name]
+						if stopChan, exists := indexToStopChan[i]; exists {
+							close(stopChan) // Signal to stop port-forward
+							delete(indexToStopChan, i)
+						}
+						addFreeIndex(i)
+						fmt.Println(pkg.ColorLine("New freelist: ", pkg.ColorYellow), freeList)
+					}
+				}
+			}()
+
 			sigchan := make(chan os.Signal)
 			signal.Notify(sigchan, os.Interrupt)
 			wg.Add(1)
