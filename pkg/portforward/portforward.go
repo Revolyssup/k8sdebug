@@ -14,6 +14,9 @@ import (
 	"time"
 
 	"github.com/revolyssup/k8sdebug/pkg"
+	"github.com/revolyssup/k8sdebug/pkg/forwarder"
+	"github.com/revolyssup/k8sdebug/pkg/portforward/mock"
+	"github.com/revolyssup/k8sdebug/pkg/portforward/roundrobin"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,8 +48,8 @@ func forwardToPod(hostConn net.Conn, podCon net.Conn) {
 	io.Copy(podCon, hostConn)
 }
 
-func getPodConnection(fw forwarder) (net.Conn, error) {
-	port := fw.Port()
+func getPodConnection(fw forwarder.Forwarder) (net.Conn, error) {
+	port := fw.NextPort()
 	podConn, err := net.Dial("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
 		return nil, err
@@ -54,43 +57,12 @@ func getPodConnection(fw forwarder) (net.Conn, error) {
 	return podConn, nil
 }
 
-type forwarder interface {
-	Port() string
-}
-
-type roundRobin struct {
-	connNumber int
-	mx         sync.Mutex
-}
-
-func (rr *roundRobin) Port() string {
-	rr.mx.Lock()
-	defer rr.mx.Unlock()
-
-	initial := rr.connNumber
-	for {
-		rr.connNumber = (rr.connNumber + 1) % len(connPool)
-		portNum := connPool[rr.connNumber]
-		if portNum != "" {
-			// Check if port is actually listening
-			conn, err := net.DialTimeout("tcp", ":"+portNum, 50*time.Millisecond)
-			if err == nil {
-				conn.Close()
-				fmt.Println("PORT RETURNED ", portNum)
-				return portNum
-			}
-		}
-		if rr.connNumber == initial {
-			break // Avoid infinite loop
-		}
-	}
-	return ""
-}
-
-func getForwarder(policy string) forwarder {
+func getForwarder(policy string) forwarder.Forwarder {
 	switch policy {
 	case "round-robin":
-		return &roundRobin{}
+		return roundrobin.New(connPool)
+	case "mock":
+		return mock.New()
 	}
 	return nil
 }
