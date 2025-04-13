@@ -258,7 +258,6 @@ func NewCommand() *cobra.Command {
 			go func() {
 				<-sigchan
 				wg.Done()
-				listener.Close()
 			}()
 			wg.Wait()
 			fmt.Println("Stopping watcher...")
