@@ -72,8 +72,8 @@ First time the k8sdebug command is called this file will be created.
 
 ## Progress
 
-- [ ] Persistent Log analysis
-- [ ] Smart port forwarding
+- [x] Persistent Log analysis
+- [x] Smart port forwarding
 - [ ] In-cluster connectivity testing.
 - [ ] `kubebox`
 - [ ] Traffic recording and visualisation
