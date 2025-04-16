@@ -171,5 +171,8 @@ func readNLines(file *os.File) string {
 	if initial < 0 {
 		initial = 0
 	}
+	if final >= len(lines) {
+		final = len(lines) - 1
+	}
 	return strings.Join(lines[initial:final], "\n")
 }
