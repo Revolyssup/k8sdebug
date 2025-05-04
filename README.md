@@ -33,14 +33,12 @@ k8sdebug logs cleanup --hard        # Remove all logs
 ```
 
 ``` bash
+#To get the diff between all the pods created under this deployment on the last 20 lines of the logs along with timestamp of each pod.
 k8sdebug logs diff -n <namespace> --type deployment --tail 20(default) <name of deployment>
 ```
 
-To get the diff between all the pods created under this deployment on the last 20 lines of the logs along with timestamp of each pod.
-
-If there were 5 pods then 4 diffs will be generated one after the other like this.
-
 ```bash
+#If there were 5 pods then 4 diffs will be generated one after the other like this.
 pod1 (timestamp)-pod2 (timestamp)
 <diff>
 pod2(ts) - pod3(ts)
