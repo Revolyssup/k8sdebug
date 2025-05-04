@@ -23,24 +23,52 @@ func newRecordCommand() *cobra.Command {
 		Use:   "record",
 		Short: "Record logs of a pod",
 		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Println("Record command executed")
-			switch args[0] {
-			case "run":
-				startLogger()
-			case "stop":
-				stopLogger()
-			case "restart":
-				stopLogger()
-				time.Sleep(1 * time.Second) // TODO: Sync better than sleeping.
-				startLogger()
-			default:
-				cmd.Println("Invalid argument. Use 'run' or 'stop'.")
-			}
+		PreRun: func(cmd *cobra.Command, args []string) {
+			cmd.Println(pkg.ColorLine("NOTE: Currently only 1 recorder is supported at a time.", pkg.ColorYellow))
 		},
 	}
+	cmd.AddCommand(&cobra.Command{
+		Use: "run",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Println("Starting logger...")
+			startLogger()
+		},
+		Args:  cobra.NoArgs,
+		Short: "Start the logger",
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use: "stop",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Println("Starting logger...")
+			stopLogger()
+		},
+		Args:  cobra.NoArgs,
+		Short: "Start the logger",
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use: "restart",
+		Run: func(cmd *cobra.Command, args []string) {
+			stopLogger()
+			time.Sleep(1 * time.Second) // TODO: Sync better than sleeping.
+			startLogger()
+		},
+		Args:  cobra.NoArgs,
+		Short: "Start the logger",
+	})
 
-	cmd.Flags().StringVarP(&labels, "labels", "l", "", "list of key value pairs to use as labels while filtering pods.")
+	cmd.AddCommand(&cobra.Command{
+		Use: "status",
+		Run: func(cmd *cobra.Command, args []string) {
+			if pkg.ConfigData.LoggerPID != 0 {
+				fmt.Println("Logger is running with PID:", pkg.ConfigData.LoggerPID)
+			} else {
+				fmt.Println("Logger is not running.")
+			}
+		},
+		Args:  cobra.NoArgs,
+		Short: "Status of the logger",
+	})
+	cmd.PersistentFlags().StringVarP(&labels, "labels", "l", "", "list of key value pairs to use as labels while filtering pods.")
 	return cmd
 }
 
@@ -111,6 +139,7 @@ func stopLogger() {
 		return
 	}
 	fmt.Println("STOPPED")
+	pkg.ConfigData.LoggerPID = 0
 }
 func init() {
 	home, err := os.UserHomeDir()

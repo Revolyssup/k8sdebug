@@ -50,6 +50,9 @@ func forwardToPod(hostConn net.Conn, podCon net.Conn) {
 
 func getPodConnection(fw forwarder.Forwarder) (net.Conn, error) {
 	port := fw.NextPort()
+	if port == "" {
+		return nil, fmt.Errorf("no available port")
+	}
 	podConn, err := net.Dial("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
 		return nil, err
@@ -60,7 +63,7 @@ func getPodConnection(fw forwarder.Forwarder) (net.Conn, error) {
 func getForwarder(policy string) forwarder.Forwarder {
 	switch policy {
 	case "round-robin":
-		return roundrobin.New(connPool)
+		return roundrobin.New(&connPool)
 	case "mock":
 		return mock.New()
 	}
@@ -153,7 +156,6 @@ func NewCommand() *cobra.Command {
 					close(stopChan)
 					delete(indexToStopChan, i)
 				}
-				fmt.Println("WILL TRY TO CREATE AT INDEX", i)
 				req := cs.CoreV1().RESTClient().Post().
 					Resource("pods").
 					Namespace(namespace).
@@ -161,7 +163,6 @@ func NewCommand() *cobra.Command {
 					SubResource("portforward")
 				transporter, upgrader, err := spdy.RoundTripperFor(config)
 				if err != nil {
-					fmt.Println("coudnot open connection for pod", pod.Name)
 					return "", err
 				}
 				dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transporter}, "POST", req.URL())
@@ -180,7 +181,6 @@ func NewCommand() *cobra.Command {
 					return "", fmt.Errorf("port-forward setup failed: %v", err)
 				}
 				go func() {
-					fmt.Println("FORWARDER WILL RUN FOR ", hostPortStr)
 					if err := forwarder.ForwardPorts(); err != nil {
 						fmt.Println("coud not forward connection for pod", pod.Name)
 					}

@@ -12,10 +12,11 @@ import (
 type RoundRobin struct {
 	connNumber int
 	mx         sync.Mutex
-	connPool   []string
+	connPool   *[]string
 }
 
-func New(connPool []string) forwarder.Forwarder {
+func New(connPool *[]string) forwarder.Forwarder {
+	fmt.Println("NEW CALLED WITH ", &connPool)
 	return &RoundRobin{
 		connPool: connPool,
 	}
@@ -25,9 +26,16 @@ func (rr *RoundRobin) NextPort() string {
 	defer rr.mx.Unlock()
 
 	initial := rr.connNumber
+	fmt.Println("CONN POOL in next port", &rr.connPool)
+	if rr.connPool == nil {
+		return ""
+	}
+	if len(*rr.connPool) == 0 {
+		return ""
+	}
 	for {
-		rr.connNumber = (rr.connNumber + 1) % len(rr.connPool)
-		portNum := rr.connPool[rr.connNumber]
+		rr.connNumber = (rr.connNumber + 1) % len(*rr.connPool)
+		portNum := (*rr.connPool)[rr.connNumber]
 		if portNum != "" {
 			// Check if port is actually listening
 			conn, err := net.DialTimeout("tcp", ":"+portNum, 50*time.Millisecond)
