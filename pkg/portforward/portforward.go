@@ -91,6 +91,32 @@ func addFreeIndex(i int) {
 	freeList = append(freeList, i)
 	connPool[i] = "" // RESET
 }
+
+// Accepts incoming connection and establishes bidirectional communication between pod and user request
+func listenAndAccept(ctx context.Context, listener net.Listener, fw forwarder.Forwarder) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			hostConn, err := listener.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return // Prolly exiting
+				}
+				fmt.Printf("Accept error: %v", err)
+				continue
+			}
+			podConn, err := getPodConnection(fw)
+			if err != nil {
+				fmt.Printf("Pod connection error: %v", err)
+				continue
+			}
+			forwardToPod(hostConn, podConn)
+		}
+
+	}
+}
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "port-forward",
@@ -106,30 +132,8 @@ func NewCommand() *cobra.Command {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			go func() {
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						hostConn, err := listener.Accept()
-						if err != nil {
-							if errors.Is(err, net.ErrClosed) {
-								return // Prolly exiting
-							}
-							fmt.Printf("Accept error: %v", err)
-							continue
-						}
-						podConn, err := getPodConnection(fw)
-						if err != nil {
-							fmt.Printf("Pod connection error: %v", err)
-							continue
-						}
-						forwardToPod(hostConn, podConn)
-					}
+			go listenAndAccept(ctx, listener, fw)
 
-				}
-			}()
 			kubeconfig := clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
 			config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 			if err != nil {
@@ -145,16 +149,18 @@ func NewCommand() *cobra.Command {
 				panic("Exiting runner..." + err.Error())
 			}
 			pods := initialList.Items
-			connPool = make([]string, len(pods))
-			podNameToPoolIndex = make(map[string]int, len(pods))
+			connPool = make([]string, len(pods))                 // This maintains list of available addresses that be used to forward traffic
+			podNameToPoolIndex = make(map[string]int, len(pods)) // This is used to free the connpool when pod is terminated
 			fmt.Printf(pkg.ColorLine(fmt.Sprintf("listening on %s using %s policy across %d pods\n", hostport, policy, len(pods)), pkg.ColorGreen))
-			startPortForward := func(i int, pod v1.Pod) (string, error) {
-				if i == fromWatch {
-					i = getFreeIndex()
+
+			startPortForward := func(iConnPool int, pod v1.Pod) (string, error) {
+				if iConnPool == fromWatch {
+					iConnPool = getFreeIndex()
 				}
-				if stopChan, exists := indexToStopChan[i]; exists {
+				// Stop any previous port forwards, if running for any previous connections in the connection pool
+				if stopChan, exists := indexToStopChan[iConnPool]; exists {
 					close(stopChan)
-					delete(indexToStopChan, i)
+					delete(indexToStopChan, iConnPool)
 				}
 				req := cs.CoreV1().RESTClient().Post().
 					Resource("pods").
@@ -167,17 +173,17 @@ func NewCommand() *cobra.Command {
 				}
 				dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transporter}, "POST", req.URL())
 				stopChan := make(chan struct{})
-				indexToStopChan[i] = stopChan // Track new stop channel
+				indexToStopChan[iConnPool] = stopChan // Track new stop channel
 				readyChan := make(chan struct{})
-				hostPort := startingHostPort + i
+				hostPort := startingHostPort + iConnPool
 
 				hostPortStr := fmt.Sprintf("%s:%s", strconv.Itoa(hostPort), containerPort)
-				connPool[i] = strconv.Itoa(hostPort)
-				podNameToPoolIndex[pod.Name] = i
+				connPool[iConnPool] = strconv.Itoa(hostPort)
+				podNameToPoolIndex[pod.Name] = iConnPool
 				forwarder, err := portforward.New(dialer, []string{hostPortStr}, stopChan, readyChan, os.Stdout, os.Stderr)
 				if err != nil {
-					connPool[i] = "" // Reset connPool entry
-					addFreeIndex(i)  // Return index to freeList
+					connPool[iConnPool] = "" // Reset connPool entry
+					addFreeIndex(iConnPool)  // Return index to freeList
 					return "", fmt.Errorf("port-forward setup failed: %v", err)
 				}
 				go func() {
