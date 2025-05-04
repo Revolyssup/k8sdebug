@@ -1,7 +1,6 @@
 package roundrobin
 
 import (
-	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -16,7 +15,6 @@ type RoundRobin struct {
 }
 
 func New(connPool *[]string) forwarder.Forwarder {
-	fmt.Println("NEW CALLED WITH ", &connPool)
 	return &RoundRobin{
 		connPool: connPool,
 	}
@@ -26,7 +24,6 @@ func (rr *RoundRobin) NextPort() string {
 	defer rr.mx.Unlock()
 
 	initial := rr.connNumber
-	fmt.Println("CONN POOL in next port", &rr.connPool)
 	if rr.connPool == nil {
 		return ""
 	}
@@ -41,7 +38,6 @@ func (rr *RoundRobin) NextPort() string {
 			conn, err := net.DialTimeout("tcp", ":"+portNum, 50*time.Millisecond)
 			if err == nil {
 				conn.Close()
-				fmt.Println("PORT RETURNED ", portNum)
 				return portNum
 			}
 		}
