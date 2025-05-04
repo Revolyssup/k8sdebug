@@ -51,37 +51,32 @@ pod2(ts) - pod3(ts)
 ```bash
 k8sdebug logs show -n <namespace> --type replicaset --tail 20(default) --index 3
 (the no of pod chronologically which was created. default to latest)  <name of replicaset>
+# will log the logs of 3rd pod created under this replicaset.
 ```
 
-will log the logs of 3rd pod created under this replicaset.
+### What is --type?
+
+Here type is actually the first object in the chain of ownerReferences that led to the creation of the pod. This is the smart part where k8sdebug finds all pods under that root parent. The rational for this UX is that application developers trying to debug usually don't care about the objects created in the Middle. For instance, if a user deployed an Argo Application which resulted in creation of pod then their rational would be that "I know the name of my Argo App, now help me analyze logs on the pods created under it"
 
 ```bash
 k8sdebug logs record stop -n <namespace>
+#will stop the daemon process.
 ```
-
-will stop the daemon process.
 
 ```bash
 k8sdebug logs setpath <path>
+#can set the default path where files are stored. Defaults to /tmp.
 ```
-
-can set the default path where files are stored. Defaults to /tmp.
 
 ```bash
 k8sdebug logs getpath
+#returns the path. The path is stored in a .k8sdebug file in ~ in key value form like
 ```
-
-returns the path. The path is stored in a .k8sdebug file in ~ in key value form like
-
-```.env
-PATH=/home/ashish/k8sdebug.
-```
-
-First time the k8sdebug command is called this file will be created.
-
 
 ### 🔄 Smart Port Forwarding
+
 ![arch](./archport.png)
+
 ```bash
 k8sdebug port-forward \
   -n my-namespace \
@@ -91,8 +86,8 @@ k8sdebug port-forward \
   --containerport 80
 # Supported policies:
 # - round-robin (default)
-
 ```
+
 🤝 Contributing
 I welcome contributions that align with our scope:
 
