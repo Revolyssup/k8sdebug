@@ -19,7 +19,7 @@ func New(connPool *[]string) forwarder.Forwarder {
 		connPool: connPool,
 	}
 }
-func (rr *RoundRobin) NextPort() string {
+func (rr *RoundRobin) NextPort(_ net.Conn) string {
 	rr.mx.Lock()
 	defer rr.mx.Unlock()
 

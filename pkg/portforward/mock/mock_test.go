@@ -10,10 +10,10 @@ import (
 func TestRoundRobin(t *testing.T) {
 	mock := mock.New("8080", "8081", "8082")
 
-	assert.Equal(t, "8080", mock.NextPort())
-	assert.Equal(t, "8081", mock.NextPort())
-	assert.Equal(t, "8082", mock.NextPort())
-	assert.Equal(t, "8080", mock.NextPort())
-	assert.Equal(t, "8081", mock.NextPort())
-	assert.Equal(t, "8082", mock.NextPort())
+	assert.Equal(t, "8080", mock.NextPort(nil))
+	assert.Equal(t, "8081", mock.NextPort(nil))
+	assert.Equal(t, "8082", mock.NextPort(nil))
+	assert.Equal(t, "8080", mock.NextPort(nil))
+	assert.Equal(t, "8081", mock.NextPort(nil))
+	assert.Equal(t, "8082", mock.NextPort(nil))
 }

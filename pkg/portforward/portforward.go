@@ -17,6 +17,7 @@ import (
 	"github.com/revolyssup/k8sdebug/pkg/forwarder"
 	"github.com/revolyssup/k8sdebug/pkg/portforward/mock"
 	"github.com/revolyssup/k8sdebug/pkg/portforward/roundrobin"
+	"github.com/revolyssup/k8sdebug/pkg/portforward/sticky"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,8 +49,8 @@ func forwardToPod(hostConn net.Conn, podCon net.Conn) {
 	io.Copy(podCon, hostConn)
 }
 
-func getPodConnection(fw forwarder.Forwarder) (net.Conn, error) {
-	port := fw.NextPort()
+func getPodConnection(fw forwarder.Forwarder, hostConn net.Conn) (net.Conn, error) {
+	port := fw.NextPort(hostConn)
 	if port == "" {
 		return nil, fmt.Errorf("no available port")
 	}
@@ -66,6 +67,8 @@ func getForwarder(policy string) forwarder.Forwarder {
 		return roundrobin.New(&connPool)
 	case "mock":
 		return mock.New()
+	case "sticky":
+		return sticky.New(&connPool)
 	}
 	return nil
 }
@@ -107,7 +110,7 @@ func listenAndAccept(ctx context.Context, listener net.Listener, fw forwarder.Fo
 				fmt.Printf("Accept error: %v", err)
 				continue
 			}
-			podConn, err := getPodConnection(fw)
+			podConn, err := getPodConnection(fw, hostConn)
 			if err != nil {
 				fmt.Printf("Pod connection error: %v", err)
 				continue
@@ -247,7 +250,11 @@ func NewCommand() *cobra.Command {
 
 	cmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "default", "Name of the pod")
 	cmd.PersistentFlags().StringVarP(&typ, "type", "t", "pod", "Name of the pod")
-	cmd.PersistentFlags().StringVar(&policy, "policy", "round-robin", "policy to use while sending requests")
+	cmd.PersistentFlags().StringVar(&policy, "policy", "round-robin", `policy to use while sending requests.
+Default policy is round-robin. 
+round-robin: In this mode, requests are balanced across all the pods much like Kubernetes service.
+sticky: In this mode, requests from a particular source IP will always be directed to a single pod.
+`)
 	cmd.Flags().StringVarP(&labels, "labels", "l", "", "list of key value pairs to use as labels while filtering pods.")
 	cmd.Flags().StringVar(&hostport, "hostport", "3000", "host port on which requests will be sent")
 	cmd.Flags().StringVar(&containerPort, "containerport", "80", "container port on which requests will be sent")

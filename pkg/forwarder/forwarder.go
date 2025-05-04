@@ -1,5 +1,9 @@
 package forwarder
 
+import (
+	"net"
+)
+
 type Forwarder interface {
-	NextPort() string
+	NextPort(net.Conn) string
 }

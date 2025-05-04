@@ -81,7 +81,7 @@ First time the k8sdebug command is called this file will be created.
 
 
 ### 🔄 Smart Port Forwarding
-
+![arch](./archport.png)
 ```bash
 k8sdebug port-forward \
   -n my-namespace \
@@ -89,7 +89,6 @@ k8sdebug port-forward \
   --policy round-robin \
   --hostport 8080 \
   --containerport 80
-
 # Supported policies:
 # - round-robin (default)
 
