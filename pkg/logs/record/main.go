@@ -16,6 +16,7 @@ import (
 	"github.com/revolyssup/k8sdebug/pkg"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -179,6 +180,49 @@ func main() {
 func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, namespace string) {
 	creationTime := pod.CreationTimestamp.Time
 	podName := pod.Name
+	// Wait for pod to be ready or reach a terminal state
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+podWaitLoop:
+	for {
+		select {
+		case <-waitCtx.Done():
+			fmt.Printf("Timeout waiting for pod %s to be ready\n", podName)
+			break podWaitLoop
+		default:
+			currentPod, err := cs.CoreV1().Pods(namespace).Get(waitCtx, podName, metav1.GetOptions{})
+			if err != nil {
+				if kerrors.IsNotFound(err) {
+					fmt.Printf("Pod %s no longer exists\n", podName)
+					break podWaitLoop
+				}
+				fmt.Printf("Error fetching pod %s: %v\n", podName, err)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+
+			switch currentPod.Status.Phase {
+			case v1.PodRunning:
+				// Check container status
+				for _, cs := range currentPod.Status.ContainerStatuses {
+					if cs.State.Running != nil {
+						fmt.Printf("Pod %s is ready\n", podName)
+						break podWaitLoop
+					}
+				}
+				fmt.Printf("Pod %s is running but containers not ready\n", podName)
+				time.Sleep(2 * time.Second)
+			case v1.PodSucceeded, v1.PodFailed:
+				fmt.Printf("Pod %s in terminal state: %s\n", podName, currentPod.Status.Phase)
+				break podWaitLoop
+			default:
+				fmt.Printf("Pod %s in phase: %s\n", podName, currentPod.Status.Phase)
+				time.Sleep(2 * time.Second)
+			}
+		}
+	}
+
+	fmt.Println("New pod added:", pod.Name, "at", creationTime.Format("2006-01-02 15:04:05"))
 	// podNs := pod.Namespace
 	// TODO: Fix this 5 second wait
 	time.Sleep(time.Second * 5) // Wait for the pod to be ready
