@@ -160,7 +160,7 @@ func main() {
 	}()
 
 	var wg sync.WaitGroup
-	sigchan := make(chan os.Signal)
+	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, os.Interrupt)
 	wg.Add(1)
 	go func() {
@@ -182,6 +182,7 @@ func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, name
 	// podNs := pod.Namespace
 	// TODO: Fix this 5 second wait
 	time.Sleep(time.Second * 5) // Wait for the pod to be ready
+
 	fmt.Println("New pod added: " + pod.Name + "on time " + creationTime.Format("2006-01-02 15:04:05"))
 	dir := filepath.Join(pkg.ConfigData.LogsPath, namespace)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -233,7 +234,6 @@ func processPod(ctx context.Context, cs *kubernetes.Clientset, pod *v1.Pod, name
 				fmt.Println(err.Error())
 			}
 			fmt.Println("Stream closed for pod: " + podName)
-			break
 		}
 	}(podName)
 
@@ -318,7 +318,7 @@ func (p *PodNode) Next() Node {
 	case "ReplicaSet":
 		rs, err := p.cs.AppsV1().ReplicaSets(namespace).Get(context.Background(), name, metav1.GetOptions{})
 		if err != nil {
-			fmt.Println(fmt.Sprintf("Error fetching ReplicaSet %s: %v", name, err))
+			fmt.Printf("Error fetching ReplicaSet %s: %v\n", name, err)
 			return nil
 		}
 		rsNode := &ReplicasetNode{
